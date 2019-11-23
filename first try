@@ -1,0 +1,78 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelBinarizer, RobustScaler, StandardScaler
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn_features.transformers import DataFrameSelector
+from sklearn.base import TransformerMixin
+from sklearn.metrics import mean_squared_error
+from sklearn.model_selection import cross_val_score, GridSearchCV, train_test_split
+from sklearn.linear_model import LinearRegression, Lasso, Ridge
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+import joblib
+
+
+class MyLabelBinarizer(TransformerMixin):
+    def __init__(self, *args, **kargs):
+        self.encoder = LabelBinarizer(*args, **kargs)
+
+    def fit(self, x, y=0):
+        self.encoder.fit(x)
+        return self
+
+    def transform(self, x, y=0):
+        return self.encoder.transform(x)
+
+
+if __name__ == '__main__':
+    data_train = pd.read_csv('./train.csv')
+    data_test = pd.read_csv('./test.csv')
+    # print(data_train.info())
+    # print(data_test.info())
+    # 填充缺失值
+    data_test = data_test.fillna(method='pad')
+    # 特征转换
+    num_feats = ['feature_1', 'feature_2', 'feature_3']
+    dis_feats = ['first_active_month']
+    num_pipeline = Pipeline([
+        ('selector', DataFrameSelector(num_feats)),
+        ('std_scalar', StandardScaler())
+    ])
+    dis_pipeline = Pipeline([
+        ('selector', DataFrameSelector(dis_feats)),
+        ('label_binarizer', MyLabelBinarizer())
+    ])
+    full_pipeline = FeatureUnion(transformer_list=[
+        ('num_pipeline', num_pipeline),
+        ('dis_pipeline', dis_pipeline)
+    ])
+    train_x = full_pipeline.fit_transform(data_train)
+    test_x = full_pipeline.transform(data_test)
+    train_y = data_train['target']
+    # shuffle
+    np.random.seed(42)
+    index = np.random.permutation(len(train_y))
+    train_x = train_x[index]
+    train_y = train_y[index]
+    X_train, X_test, y_train, y_test = train_test_split(train_x, train_y, test_size=0.2, random_state=42)
+    # 训练
+    # 线性回归
+    # lin_reg = LinearRegression()
+    # lin_scores = cross_val_score(lin_reg, X_train, y_train, scoring='neg_mean_squared_error', cv=30)
+    # lin_rmse_scores = np.sqrt(-lin_scores)  # 交叉验证使用效用函数，结果为负数
+    # print('线性回归 lin_rmse_scor es_mean:', lin_rmse_scores.mean())    # 1681116.0946782331
+    # print('std:', lin_rmse_scores.std())
+    # 岭回归
+    ridge_reg = Ridge(alpha=10)
+    # ridge_scores = cross_val_score(ridge_reg, X_train, y_train, scoring='neg_mean_squared_error', cv=30)
+    # ridge_rmse_scores = np.sqrt(-ridge_scores)  # 交叉验证使用效用函数，结果为负数
+    # print('岭回归 ridge_rmse_scores_mean:', ridge_rmse_scores.mean())  # 0.22535303761972122
+    # print('std:', ridge_rmse_scores.std())
+
+    # ridge_reg.fit(train_x, train_y)
+    # joblib.dump(ridge_reg, './models/ridge.pkl')
+
+    ridge_model = joblib.load('./models/ridge.pkl')
+    predictions = pd.DataFrame(ridge_model.predict(test_x), columns=['target'])
+    output_predictions = pd.concat([data_test['card_id'], predictions], axis=1)
+    output_predictions.to_csv('./outputs/pre_ridge.csv', index=None)
